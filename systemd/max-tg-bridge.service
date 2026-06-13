@@ -1,0 +1,19 @@
+[Unit]
+Description=MAX (userbot) <-> Telegram bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maxbridge
+WorkingDirectory=/opt/max-tg-bridge
+EnvironmentFile=/opt/max-tg-bridge/.env
+# ВАЖНО: перед первым запуском сервиса выполните авторизацию вручную:
+#   sudo -u maxbridge /opt/max-tg-bridge/venv/bin/python /opt/max-tg-bridge/login.py
+# (нужно один раз ввести код из SMS; сессия сохранится в max_session/).
+ExecStart=/opt/max-tg-bridge/venv/bin/python /opt/max-tg-bridge/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
