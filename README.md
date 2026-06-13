@@ -38,7 +38,7 @@ Telegram-супергруппе-форуме; ветки создаются ав
 На сервере **Ubuntu** (22.04/24.04) от root:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/YOURGITHUB/max-tg-bridge/main/install.sh)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Friizers/max-tg-bridge/main/install.sh)
 ```
 
 Скрипт сам поставит зависимости (Python, `ffmpeg`), скачает проект в
@@ -77,7 +77,7 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/YOURGITHUB/max-tg-bridg
 sudo apt update && sudo apt install -y python3 python3-venv python3-pip git ffmpeg
 
 # проект
-sudo git clone https://github.com/YOURGITHUB/max-tg-bridge.git /opt/max-tg-bridge
+sudo git clone https://github.com/Friizers/max-tg-bridge.git /opt/max-tg-bridge
 cd /opt/max-tg-bridge
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt

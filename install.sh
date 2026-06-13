@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Установщик моста MAX <-> Telegram в одну команду.
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/YOURGITHUB/max-tg-bridge/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/Friizers/max-tg-bridge/main/install.sh)
 #
-# Перед публикацией замени YOURGITHUB на свой GitHub-логин (в строке REPO_URL ниже
+# Перед публикацией замени Friizers на свой GitHub-логин (в строке REPO_URL ниже
 # и в команде выше / в README).
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/YOURGITHUB/max-tg-bridge.git}"
+REPO_URL="${REPO_URL:-https://github.com/Friizers/max-tg-bridge.git}"
 BRANCH="${BRANCH:-main}"
 DIR="${DIR:-/opt/max-tg-bridge}"
 SERVICE="max-tg-bridge"
