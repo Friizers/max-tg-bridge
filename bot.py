@@ -18,10 +18,10 @@ import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from pymax import Client, ConsolePasswordProvider, ConsoleSmsCodeProvider
 
 import config as cfg
 import max_to_tg
+import maxclient
 import tg_to_max
 from storage import Storage
 
@@ -29,17 +29,6 @@ log = logging.getLogger("bridge")
 
 # Спец-код выхода «сессия MAX мертва» — systemd не перезапускает (см. unit).
 SESSION_DEAD_EXIT = 69
-
-
-def build_max_client() -> Client:
-    os.makedirs(cfg.MAX_WORK_DIR, exist_ok=True)
-    return Client(
-        phone=cfg.MAX_PHONE,
-        session_name=cfg.MAX_SESSION,
-        work_dir=cfg.MAX_WORK_DIR,
-        sms_code_provider=ConsoleSmsCodeProvider(),
-        password_provider=ConsolePasswordProvider(),
-    )
 
 
 async def _notify_session_down(bot: Bot, reason) -> None:
@@ -66,7 +55,7 @@ async def main() -> None:
 
     storage = Storage(cfg.DB_PATH)
     http = aiohttp.ClientSession()
-    client = build_max_client()
+    client = maxclient.build_client()
 
     bot = Bot(cfg.TG_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()

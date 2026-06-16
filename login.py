@@ -9,11 +9,11 @@
 (на сервере — внутри tmux/screen)."""
 import asyncio
 import logging
-import os
 
-from pymax import Client, ConsolePasswordProvider, ConsoleSmsCodeProvider
+from pymax import Client
 
 import config as cfg
+import maxclient
 
 
 async def main() -> None:
@@ -21,14 +21,8 @@ async def main() -> None:
     if not cfg.MAX_PHONE:
         raise SystemExit("Укажите MAX_PHONE в .env")
 
-    os.makedirs(cfg.MAX_WORK_DIR, exist_ok=True)
-    client = Client(
-        phone=cfg.MAX_PHONE,
-        session_name=cfg.MAX_SESSION,
-        work_dir=cfg.MAX_WORK_DIR,
-        sms_code_provider=ConsoleSmsCodeProvider(),
-        password_provider=ConsolePasswordProvider(),
-    )
+    # Тот же клиент с фиксированной личностью устройства, что и в bot.py.
+    client = maxclient.build_client()
 
     done = asyncio.Event()
 
