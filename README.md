@@ -29,6 +29,8 @@ Telegram-супергруппе-форуме; ветки создаются ав
 - ↪️ **Пересланные сообщения** — разворачиваются и пересылаются с пометкой об источнике.
 - 🎞 **Стикеры и гифки** — стикеры конвертируются в картинку (с обрезкой фона),
   видеостикеры — в кадр, гифки уходят видео.
+- 🔔 **Контроль сессии** — если сессия MAX слетела, бот пишет об этом в Telegram и
+  подсказывает команду восстановления (`relogin.sh`).
 - ⚙️ **systemd-сервис** — работает в фоне с автозапуском и авто-перезапуском.
 
 ---
@@ -38,8 +40,10 @@ Telegram-супергруппе-форуме; ветки создаются ав
 На сервере **Ubuntu** (22.04/24.04) от root:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/Friizers/max-tg-bridge/main/install.sh)
+curl -fsSL https://raw.githubusercontent.com/Friizers/max-tg-bridge/main/install.sh | sudo bash
 ```
+
+> Уже под root? Можно без `sudo`: `curl -fsSL …/install.sh | bash`.
 
 Скрипт сам поставит зависимости (Python, `ffmpeg`), скачает проект в
 `/opt/max-tg-bridge`, спросит токен/ID группы/телефон, проведёт авторизацию в MAX
@@ -155,6 +159,7 @@ journalctl -u max-tg-bridge -f
 bot.py          точка входа: userbot MAX + бот Telegram одновременно
 login.py        одноразовая авторизация MAX (SMS-код)
 get_group_id.py утилита: узнать ID группы
+relogin.sh      повторный вход в MAX при слетевшей сессии
 max_to_tg.py    MAX → Telegram
 tg_to_max.py    Telegram → MAX
 config.py       настройки из .env
@@ -173,7 +178,8 @@ install.sh      установщик в одну команду
 - **Бот не видит сообщения в Telegram** — не отключён Privacy Mode (`/setprivacy`).
 - **Из Telegram не уходит в MAX** — пиши **в теме**, созданной мостом; «General» и
   ручные несвязанные темы игнорируются. Проверь `FORWARD_TG_TO_MAX=true`.
-- **Аккаунт MAX «разлогинило»** — удали `max_session/` и пройди `login.py` заново.
+- **Аккаунт MAX «разлогинило»** — бот пришлёт уведомление в Telegram; на сервере
+  выполни `cd /opt/max-tg-bridge && sudo bash relogin.sh` (введёшь код из SMS).
 - **Форвард/звонок не дошёл** — поставь `LOG_LEVEL=DEBUG`, повтори, посмотри лог.
 
 ---

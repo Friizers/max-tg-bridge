@@ -14,6 +14,8 @@ EnvironmentFile=/opt/max-tg-bridge/.env
 ExecStart=/opt/max-tg-bridge/venv/bin/python /opt/max-tg-bridge/bot.py
 Restart=always
 RestartSec=5
+# Код 69 = сессия MAX мертва: не перезапускаем, ждём ручной relogin.sh
+RestartPreventExitStatus=69
 
 [Install]
 WantedBy=multi-user.target

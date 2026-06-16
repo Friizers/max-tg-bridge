@@ -13,7 +13,29 @@ DIR="${DIR:-/opt/max-tg-bridge}"
 SERVICE="max-tg-bridge"
 
 say() { printf "\n\033[1;32m>> %s\033[0m\n" "$*"; }
-err() { printf "\n\033[1;31m!! %s\033[0m\n" "$*" >&2; }
+err() { printf "\033[1;31m!! %s\033[0m\n" "$*" >&2; }
+
+# ask <prompt> <varname> <regex> <hint> — спрашивает, пока не введут непустое
+# значение, подходящее под regex. Повторяет запрос при пустом/неверном вводе.
+ask() {
+  local prompt="$1" __var="$2" regex="$3" hint="$4" val=""
+  while true; do
+    printf "  %s: " "$prompt" > /dev/tty
+    IFS= read -r val < /dev/tty || true
+    val="${val#"${val%%[![:space:]]*}"}"   # обрезать пробелы слева
+    val="${val%"${val##*[![:space:]]}"}"   # и справа
+    if [ -z "$val" ]; then
+      err "Пустое значение недопустимо — введи ещё раз."
+      continue
+    fi
+    if [ -n "$regex" ] && ! printf '%s' "$val" | grep -qE "$regex"; then
+      err "$hint"
+      continue
+    fi
+    printf -v "$__var" '%s' "$val"
+    break
+  done
+}
 
 if [ "$(id -u)" -ne 0 ]; then
   err "Запусти от root:  sudo bash <(curl -fsSL .../install.sh)"
@@ -40,9 +62,12 @@ python3 -m venv venv
 
 if [ ! -f .env ]; then
   say "Настройка. Введи данные (см. README, как их получить):"
-  read -rp "  Telegram Bot Token (@BotFather): " TG_BOT_TOKEN </dev/tty
-  read -rp "  ID Telegram-группы (вида -100...): " TG_GROUP_ID </dev/tty
-  read -rp "  Телефон аккаунта MAX (+7...): " MAX_PHONE </dev/tty
+  ask "Telegram Bot Token (@BotFather)" TG_BOT_TOKEN '^[0-9]+:[A-Za-z0-9_-]{30,}$' \
+      "Токен вида 123456:AAH... — цифры, двоеточие и длинная часть."
+  ask "ID Telegram-группы (-100...)" TG_GROUP_ID '^-100[0-9]{6,}$' \
+      "ID супергруппы начинается с -100 и состоит из цифр. Узнать: @getidsbot."
+  ask "Телефон аккаунта MAX (+7...)" MAX_PHONE '^\+[0-9]{10,15}$' \
+      "Телефон в международном формате, например +79991234567."
   umask 077
   cat > .env <<EOF
 TG_BOT_TOKEN=$TG_BOT_TOKEN
@@ -64,8 +89,10 @@ fi
 
 if [ ! -f "max_session/session.db" ]; then
   say "Авторизация в MAX. Сейчас придёт SMS — введи код:"
-  if ! ./venv/bin/python login.py </dev/tty; then
-    err "Авторизация MAX не удалась. Проверь MAX_PHONE в $DIR/.env и запусти ещё раз:"
+  ./venv/bin/python login.py </dev/tty || true
+  if [ ! -f "max_session/session.db" ]; then
+    err "Авторизация MAX не удалась (сессия не создана). Сервис НЕ устанавливаю."
+    err "Проверь MAX_PHONE в $DIR/.env и запусти заново:"
     err "  cd $DIR && ./venv/bin/python login.py"
     exit 1
   fi
@@ -87,6 +114,7 @@ EnvironmentFile=$DIR/.env
 ExecStart=$DIR/venv/bin/python $DIR/bot.py
 Restart=always
 RestartSec=5
+RestartPreventExitStatus=69
 
 [Install]
 WantedBy=multi-user.target

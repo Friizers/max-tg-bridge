@@ -43,16 +43,29 @@ async def main() -> None:
         done.set()
 
     task = asyncio.create_task(client.start())
-    await done.wait()
-    task.cancel()
+    done_task = asyncio.create_task(done.wait())
+
+    # Ждём либо успешный on_start, либо завершение клиента (= ошибка авторизации).
+    finished, _ = await asyncio.wait(
+        {task, done_task}, return_when=asyncio.FIRST_COMPLETED
+    )
+
+    ok = done_task in finished
+    for t in (task, done_task):
+        t.cancel()
+    err = None
     try:
         await task
-    except BaseException:  # noqa: BLE001
-        pass
+    except BaseException as e:  # noqa: BLE001
+        if not isinstance(e, asyncio.CancelledError):
+            err = e
+
+    if not ok:
+        raise SystemExit(f"❌ Авторизация не удалась: {err or 'клиент завершился'}")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    except KeyboardInterrupt:
+        raise SystemExit(130)
