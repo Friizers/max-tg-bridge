@@ -16,6 +16,7 @@ from pymax import Client, ConsolePasswordProvider, ConsoleSmsCodeProvider, Extra
 from pymax.api.session.payloads import MobileUserAgentPayload
 
 import config as cfg
+import maxpatch  # noqa: F401 — патчит pymax при импорте (устойчивость к кривым событиям)
 
 log = logging.getLogger("maxclient")
 
