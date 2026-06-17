@@ -89,6 +89,16 @@ async def main() -> None:
                 reason = max_task.exception() or "соединение с MAX закрыто"
             log.error("MAX userbot остановился: %s", reason)
             await _notify_session_down(bot, reason)
+        else:
+            # Поллинг Telegram остановился сам. Чаще всего — конфликт getUpdates:
+            # тот же бот опрашивается вторым экземпляром (другой сервер / локально).
+            exc = poll_task.exception() if not poll_task.cancelled() else None
+            log.error(
+                "Telegram-поллинг остановился: %s. Вероятно, бота опрашивает второй "
+                "экземпляр (Telegram разрешает один getUpdates на токен). Убедись, "
+                "что мост запущен только на одном сервере.",
+                exc or "без ошибки",
+            )
     finally:
         for task in (max_task, poll_task):
             task.cancel()
