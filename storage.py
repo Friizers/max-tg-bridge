@@ -42,6 +42,13 @@ class Storage:
             )
             self.conn.commit()
 
+    def delete_topic(self, max_chat_id: int) -> None:
+        with self.lock:
+            self.conn.execute(
+                "DELETE FROM topic_map WHERE max_chat_id=?", (max_chat_id,)
+            )
+            self.conn.commit()
+
     def get_chat_by_topic(self, tg_topic_id: int) -> Optional[int]:
         with self.lock:
             cur = self.conn.execute(

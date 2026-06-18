@@ -9,7 +9,7 @@ from typing import Optional
 
 import aiohttp
 from aiogram import Bot
-from aiogram.exceptions import TelegramRetryAfter
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import BufferedInputFile
 from pymax import Client, Message
 from pymax.types.domain.attachments.audio import AudioAttachment
@@ -24,6 +24,19 @@ from storage import Storage
 log = logging.getLogger("max2tg")
 
 TG_CAPTION_LIMIT = 1024
+
+
+def _is_topic_gone(err: TelegramBadRequest) -> bool:
+    """Ошибка Telegram, означающая, что тема/ветка больше не существует
+    (её удалили) — повод пересоздать ветку."""
+    msg = str(err).lower()
+    return (
+        "thread not found" in msg
+        or "message thread" in msg
+        or "chat not found" in msg
+        or "topic_deleted" in msg
+        or "topic deleted" in msg
+    )
 
 
 def setup(client: Client, bot: Bot, storage: Storage, cfg, http: aiohttp.ClientSession):
@@ -124,16 +137,25 @@ async def _handle(message, client, bot, storage, cfg, http):
     if forwarded_from:
         display_name = f"{sender_name} ↪️ переслано от {forwarded_from}"
 
-    # Уведомления о звонках.
-    if calls and getattr(cfg, "NOTIFY_CALLS", True):
-        for call in calls:
-            note = f"<b>{html.escape(display_name)}</b>: {_format_call(call)}"
-            await bot.send_message(cfg.TG_GROUP_ID, note, message_thread_id=topic_id)
+    async def _deliver(tid: int) -> None:
+        if calls and getattr(cfg, "NOTIFY_CALLS", True):
+            for call in calls:
+                note = f"<b>{html.escape(display_name)}</b>: {_format_call(call)}"
+                await bot.send_message(cfg.TG_GROUP_ID, note, message_thread_id=tid)
+        if text or media:
+            await _forward(bot, cfg.TG_GROUP_ID, tid, display_name, text, media,
+                           client, http, media_chat_id, media_msg_id)
 
-    if not text and not media:
-        return
-    await _forward(bot, cfg.TG_GROUP_ID, topic_id, display_name, text, media,
-                   client, http, media_chat_id, media_msg_id)
+    try:
+        await _deliver(topic_id)
+    except TelegramBadRequest as err:
+        if not _is_topic_gone(err):
+            raise
+        # Ветку удалили в Telegram — выбрасываем мёртвую связь и пересоздаём.
+        log.info("Ветка чата %s недоступна (удалена?) — пересоздаю", chat_id)
+        storage.delete_topic(chat_id)
+        topic_id = await _get_or_create_topic(chat_id, client, storage, bot, cfg, sender_name)
+        await _deliver(topic_id)
 
 
 async def _display_name(client: Client, user_id: Optional[int]) -> str:
@@ -289,5 +311,9 @@ async def _forward(bot, group_id, topic_id, sender_name, text, media,
                     caption=caption or None, message_thread_id=topic_id)
 
             caption = ""  # подпись прикрепляем только к первому вложению
+        except TelegramBadRequest as err:
+            if _is_topic_gone(err):
+                raise  # пусть _handle пересоздаст ветку и повторит
+            log.exception("Не удалось переслать вложение %s", type(att).__name__)
         except Exception:
             log.exception("Не удалось переслать вложение %s", type(att).__name__)
