@@ -47,7 +47,7 @@ def setup(client: Client, bot: Bot, storage: Storage, cfg, http: aiohttp.ClientS
         me = c.me.contact if c.me else None
         log.info("MAX userbot подключён (user_id=%s)", getattr(me, "id", "?"))
         if getattr(cfg, "SYNC_CHATS_ON_START", True):
-            await sync_chats(c, bot, storage, cfg)
+            await sync_chats(c, bot, storage, cfg, http)
 
     @client.on_message()
     async def _on_message(message: Message, _client: Client):
@@ -227,9 +227,10 @@ async def _get_or_create_topic(chat_id, client, storage, bot, cfg, fallback_titl
     return await _create_topic(chat_id, title or fallback_title, storage, bot, cfg)
 
 
-async def sync_chats(client: Client, bot: Bot, storage: Storage, cfg) -> int:
-    """Создаёт ветки для всех чатов аккаунта, для которых их ещё нет.
-    Идемпотентно: уже связанные чаты пропускаются. Возвращает число созданных."""
+async def sync_chats(client: Client, bot: Bot, storage: Storage, cfg, http=None) -> int:
+    """Создаёт ветки для всех чатов аккаунта (для которых их ещё нет) и, если
+    задан BACKFILL_LIMIT и передан http, один раз подгружает в новые ветки
+    последние сообщения. Возвращает число созданных веток."""
     try:
         chats = await client.fetch_chats()
     except Exception:
@@ -237,19 +238,53 @@ async def sync_chats(client: Client, bot: Bot, storage: Storage, cfg) -> int:
         return 0
 
     me_id = client.me.contact.id if client.me else None
+    backfill = getattr(cfg, "BACKFILL_LIMIT", 0)
     created = 0
     for chat in chats:
-        if storage.get_topic(chat.id):
-            continue
         try:
-            title = await _chat_title(client, chat, me_id)
-            await _create_topic(chat.id, title, storage, bot, cfg)
-            created += 1
-            await asyncio.sleep(1.0)  # бережём лимиты Telegram на создание тем
+            topic_id = storage.get_topic(chat.id)
+            if topic_id is None:
+                title = await _chat_title(client, chat, me_id)
+                topic_id = await _create_topic(chat.id, title, storage, bot, cfg)
+                created += 1
+                await asyncio.sleep(1.0)  # бережём лимиты Telegram на создание тем
+            if http is not None and backfill > 0 and not storage.is_backfilled(chat.id):
+                await _backfill_chat(client, bot, storage, cfg, http, chat.id, topic_id, backfill)
+                storage.mark_backfilled(chat.id)
         except Exception:
-            log.exception("Не удалось создать ветку для чата %s", chat.id)
+            log.exception("Ошибка синхронизации чата %s", chat.id)
     log.info("Синхронизация чатов: создано веток %s (всего чатов %s)", created, len(chats))
     return created
+
+
+async def _backfill_chat(client, bot, storage, cfg, http, chat_id, topic_id, limit):
+    """Подгружает последние `limit` сообщений чата в ветку (от старых к новым)."""
+    try:
+        msgs = await client.fetch_history(chat_id, backward=limit)
+    except Exception:
+        log.exception("Бэкафилл: не удалось получить историю чата %s", chat_id)
+        return
+    if not msgs:
+        return
+
+    msgs = sorted(msgs, key=lambda m: getattr(m, "time", 0) or 0)
+    posted = 0
+    for m in msgs:
+        text = m.text or ""
+        media = [a for a in (m.attaches or []) if isinstance(a, MEDIA_TYPES)]
+        if not text and not media:
+            continue
+        name = await _display_name(client, m.sender)
+        try:
+            await _forward(bot, cfg.TG_GROUP_ID, topic_id, name, text, media,
+                           client, http, chat_id, m.id)
+            posted += 1
+            await asyncio.sleep(0.5)  # бережём лимиты Telegram
+        except TelegramRetryAfter as err:
+            await asyncio.sleep(err.retry_after + 1)
+        except Exception:
+            log.debug("Бэкафилл: пропущено сообщение %s чата %s", getattr(m, "id", "?"), chat_id)
+    log.info("Бэкафилл чата %s: переслано %s сообщений", chat_id, posted)
 
 
 async def _download(http: aiohttp.ClientSession, url: str) -> bytes:

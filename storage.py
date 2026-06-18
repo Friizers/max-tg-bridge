@@ -23,6 +23,13 @@ class Storage:
                 CREATE INDEX IF NOT EXISTS idx_topic ON topic_map(tg_topic_id);
                 """
             )
+            # Миграция: колонка для отметки «история уже подгружена».
+            try:
+                self.conn.execute(
+                    "ALTER TABLE topic_map ADD COLUMN backfilled INTEGER DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass  # колонка уже существует
             self.conn.commit()
 
     def get_topic(self, max_chat_id: int) -> Optional[int]:
@@ -39,6 +46,21 @@ class Storage:
                 "INSERT OR REPLACE INTO topic_map(max_chat_id, tg_topic_id, title) "
                 "VALUES (?, ?, ?)",
                 (max_chat_id, tg_topic_id, title),
+            )
+            self.conn.commit()
+
+    def is_backfilled(self, max_chat_id: int) -> bool:
+        with self.lock:
+            cur = self.conn.execute(
+                "SELECT backfilled FROM topic_map WHERE max_chat_id=?", (max_chat_id,)
+            )
+            row = cur.fetchone()
+            return bool(row and row[0])
+
+    def mark_backfilled(self, max_chat_id: int) -> None:
+        with self.lock:
+            self.conn.execute(
+                "UPDATE topic_map SET backfilled=1 WHERE max_chat_id=?", (max_chat_id,)
             )
             self.conn.commit()
 

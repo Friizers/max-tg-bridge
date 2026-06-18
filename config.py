@@ -35,6 +35,9 @@ SHOW_SENDER_NAME = _bool("SHOW_SENDER_NAME", True)
 SYNC_CHATS_ON_START = _bool("SYNC_CHATS_ON_START", True)
 # Присылать в Telegram уведомления о звонках MAX.
 NOTIFY_CALLS = _bool("NOTIFY_CALLS", True)
+# Сколько последних сообщений подгрузить в ветку при первом её появлении
+# (0 = выключено). Делается один раз на чат.
+BACKFILL_LIMIT = int(os.environ.get("BACKFILL_LIMIT", "0") or "0")
 
 # --- Прочее ---
 DB_PATH = os.environ.get("DB_PATH", "bridge.db")
