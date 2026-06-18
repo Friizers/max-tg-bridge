@@ -71,7 +71,7 @@ async def main() -> None:
     # сетевые обрывы; наружу пробрасывается только смерть сессии/авторизации.
     max_task = asyncio.create_task(client.start(), name="max-userbot")
     poll_task = asyncio.create_task(
-        dp.start_polling(bot, max_client=client, storage=storage, cfg=cfg),
+        dp.start_polling(bot, max_client=client, storage=storage, cfg=cfg, http=http),
         name="tg-polling",
     )
 

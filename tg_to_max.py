@@ -9,7 +9,7 @@ import tempfile
 from io import BytesIO
 
 from aiogram import Bot, F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message as TgMessage
 from pymax import Client, File, Photo, Video
 
@@ -97,6 +97,29 @@ async def cmd_sync(message: TgMessage, bot: Bot, max_client: Client, storage: St
     except Exception as err:  # noqa: BLE001
         log.exception("Ошибка /sync")
         await message.reply(f"Ошибка синхронизации: {err}")
+
+
+@router.message(Command("history"))
+async def cmd_history(
+    message: TgMessage, command: CommandObject, bot: Bot,
+    max_client: Client, storage: Storage, cfg, http,
+):
+    """Подгрузить последние N сообщений MAX-чата в эту ветку: /history [N]."""
+    tid = message.message_thread_id
+    chat_id = storage.get_chat_by_topic(tid) if tid else None
+    if not chat_id:
+        await message.reply("Команду нужно отправлять внутри ветки, связанной с MAX-чатом.")
+        return
+    limit = getattr(cfg, "BACKFILL_LIMIT", 0) or 20
+    if command.args and command.args.strip().isdigit():
+        limit = int(command.args.strip())
+    await message.reply(f"Подгружаю последние {limit} сообщений…")
+    try:
+        await max_to_tg._backfill_chat(max_client, bot, storage, cfg, http, chat_id, tid, limit)
+        await message.reply("Готово.")
+    except Exception as err:  # noqa: BLE001
+        log.exception("Ошибка /history")
+        await message.reply(f"Ошибка: {err}")
 
 
 @router.message(Command("start"))

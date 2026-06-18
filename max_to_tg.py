@@ -43,6 +43,19 @@ def _is_chat_gone(err: TelegramBadRequest) -> bool:
     return "chat not found" in str(err).lower()
 
 
+async def _safe_send(coro_factory):
+    """Отправка в Telegram с учётом flood-control: при Retry-After ждёт и повторяет
+    (а не теряет сообщение). coro_factory — функция без аргументов, создающая корутину."""
+    for _ in range(6):
+        try:
+            return await coro_factory()
+        except TelegramRetryAfter as err:
+            wait = int(err.retry_after) + 1
+            log.warning("Telegram flood control — пауза %s c и повтор", wait)
+            await asyncio.sleep(wait)
+    return await coro_factory()
+
+
 def setup(client: Client, bot: Bot, storage: Storage, cfg, http: aiohttp.ClientSession):
     """Регистрирует обработчики pymax. Вызывается до client.start()."""
 
@@ -145,7 +158,8 @@ async def _handle(message, client, bot, storage, cfg, http):
         if calls and getattr(cfg, "NOTIFY_CALLS", True):
             for call in calls:
                 note = f"<b>{html.escape(display_name)}</b>: {_format_call(call)}"
-                await bot.send_message(cfg.TG_GROUP_ID, note, message_thread_id=tid)
+                await _safe_send(
+                    lambda n=note: bot.send_message(cfg.TG_GROUP_ID, n, message_thread_id=tid))
         if text or media:
             await _forward(bot, cfg.TG_GROUP_ID, tid, display_name, text, media,
                            client, http, media_chat_id, media_msg_id)
@@ -294,7 +308,7 @@ async def _backfill_chat(client, bot, storage, cfg, http, chat_id, topic_id, lim
             await _forward(bot, cfg.TG_GROUP_ID, topic_id, name, text, media,
                            client, http, chat_id, m.id)
             posted += 1
-            await asyncio.sleep(0.5)  # бережём лимиты Telegram
+            await asyncio.sleep(1.5)  # бережём лимиты Telegram (флуд лечится _safe_send)
         except TelegramRetryAfter as err:
             await asyncio.sleep(err.retry_after + 1)
         except Exception:
@@ -314,51 +328,52 @@ async def _forward(bot, group_id, topic_id, sender_name, text, media,
 
     if not media:
         out = prefix + (": " + html.escape(text) if text else "")
-        await bot.send_message(group_id, out, message_thread_id=topic_id)
+        await _safe_send(lambda: bot.send_message(group_id, out, message_thread_id=topic_id))
         return
 
     caption = prefix + (": " + html.escape(text) if text else "")
     if len(caption) > TG_CAPTION_LIMIT:
-        await bot.send_message(group_id, caption, message_thread_id=topic_id)
+        cap = caption
+        await _safe_send(lambda: bot.send_message(group_id, cap, message_thread_id=topic_id))
         caption = ""
 
     for att in media:
         try:
             if isinstance(att, PhotoAttachment):
                 data = await _download(http, att.base_url)
-                await bot.send_photo(
+                await _safe_send(lambda: bot.send_photo(
                     group_id, BufferedInputFile(data, "photo.jpg"),
-                    caption=caption or None, message_thread_id=topic_id)
+                    caption=caption or None, message_thread_id=topic_id))
 
             elif isinstance(att, VideoAttachment):
                 req = await client.get_video_by_id(chat_id, message_id, att.video_id)
                 data = await _download(http, req.url)
-                await bot.send_video(
+                await _safe_send(lambda: bot.send_video(
                     group_id, BufferedInputFile(data, "video.mp4"),
-                    caption=caption or None, message_thread_id=topic_id)
+                    caption=caption or None, message_thread_id=topic_id))
 
             elif isinstance(att, FileAttachment):
                 req = await client.get_file_by_id(chat_id, message_id, att.file_id)
                 data = await _download(http, req.url)
-                await bot.send_document(
+                await _safe_send(lambda: bot.send_document(
                     group_id, BufferedInputFile(data, att.name or "file.bin"),
-                    caption=caption or None, message_thread_id=topic_id)
+                    caption=caption or None, message_thread_id=topic_id))
 
             elif isinstance(att, AudioAttachment):
                 if not att.url:
                     continue
                 data = await _download(http, att.url)
-                await bot.send_audio(
+                await _safe_send(lambda: bot.send_audio(
                     group_id, BufferedInputFile(data, "audio.mp3"),
-                    caption=caption or None, message_thread_id=topic_id)
+                    caption=caption or None, message_thread_id=topic_id))
 
             elif isinstance(att, StickerAttachment):
                 if not att.url:
                     continue
                 data = await _download(http, att.url)
-                await bot.send_photo(
+                await _safe_send(lambda: bot.send_photo(
                     group_id, BufferedInputFile(data, "sticker.png"),
-                    caption=caption or None, message_thread_id=topic_id)
+                    caption=caption or None, message_thread_id=topic_id))
 
             caption = ""  # подпись прикрепляем только к первому вложению
         except TelegramBadRequest as err:
