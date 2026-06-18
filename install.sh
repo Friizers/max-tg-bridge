@@ -49,8 +49,21 @@ apt-get install -y python3 python3-venv python3-pip git ffmpeg
 say "Загружаю проект в $DIR..."
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" pull --ff-only || true
-else
+elif [ -d "$DIR" ]; then
+  # Каталог есть, но это не git-репозиторий (напр. залит по SFTP). Пересоздаём
+  # как git-репозиторий, но СОХРАНЯЕМ .env, сессию MAX и базу веток.
+  say "Каталог не git-репозиторий — пересоздаю, сохраняя .env/сессию/базу..."
+  tmp="$(mktemp -d)"
+  if [ -f "$DIR/.env" ]; then cp -a "$DIR/.env" "$tmp/.env"; fi
+  if [ -d "$DIR/max_session" ]; then cp -a "$DIR/max_session" "$tmp/max_session"; fi
+  if [ -f "$DIR/bridge.db" ]; then cp -a "$DIR/bridge.db" "$tmp/bridge.db"; fi
   rm -rf "$DIR"
+  git clone --branch "$BRANCH" "$REPO_URL" "$DIR"
+  if [ -f "$tmp/.env" ]; then cp -a "$tmp/.env" "$DIR/.env"; fi
+  if [ -d "$tmp/max_session" ]; then cp -a "$tmp/max_session" "$DIR/max_session"; fi
+  if [ -f "$tmp/bridge.db" ]; then cp -a "$tmp/bridge.db" "$DIR/bridge.db"; fi
+  rm -rf "$tmp"
+else
   git clone --branch "$BRANCH" "$REPO_URL" "$DIR"
 fi
 cd "$DIR"
