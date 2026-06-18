@@ -26,17 +26,21 @@ log = logging.getLogger("max2tg")
 TG_CAPTION_LIMIT = 1024
 
 
-def _is_topic_gone(err: TelegramBadRequest) -> bool:
-    """Ошибка Telegram, означающая, что тема/ветка больше не существует
-    (её удалили) — повод пересоздать ветку."""
-    msg = str(err).lower()
+def _is_thread_gone(err: TelegramBadRequest) -> bool:
+    """Удалена сама тема/ветка (но группа жива) — повод пересоздать ветку."""
+    m = str(err).lower()
     return (
-        "thread not found" in msg
-        or "message thread" in msg
-        or "chat not found" in msg
-        or "topic_deleted" in msg
-        or "topic deleted" in msg
+        "message thread not found" in m
+        or "thread not found" in m
+        or "topic_deleted" in m
+        or "topic deleted" in m
+        or ("topic" in m and "not found" in m)
     )
+
+
+def _is_chat_gone(err: TelegramBadRequest) -> bool:
+    """Недоступна вся группа: бот удалён из группы или неверный TG_GROUP_ID."""
+    return "chat not found" in str(err).lower()
 
 
 def setup(client: Client, bot: Bot, storage: Storage, cfg, http: aiohttp.ClientSession):
@@ -149,13 +153,24 @@ async def _handle(message, client, bot, storage, cfg, http):
     try:
         await _deliver(topic_id)
     except TelegramBadRequest as err:
-        if not _is_topic_gone(err):
+        if _is_thread_gone(err):
+            # Тему удалили — выбрасываем мёртвую связь и пересоздаём ветку.
+            log.info("Ветка чата %s удалена — пересоздаю", chat_id)
+            storage.delete_topic(chat_id)
+            try:
+                topic_id = await _get_or_create_topic(
+                    chat_id, client, storage, bot, cfg, sender_name)
+                await _deliver(topic_id)
+            except TelegramBadRequest as err2:
+                log.error("Не удалось пересоздать ветку для чата %s: %s", chat_id, err2)
+        elif _is_chat_gone(err):
+            log.error(
+                "Telegram-группа недоступна (TG_GROUP_ID=%s): бот удалён из группы, "
+                "Темы выключены или неверный ID. Сообщение из чата %s пропущено.",
+                cfg.TG_GROUP_ID, chat_id,
+            )
+        else:
             raise
-        # Ветку удалили в Telegram — выбрасываем мёртвую связь и пересоздаём.
-        log.info("Ветка чата %s недоступна (удалена?) — пересоздаю", chat_id)
-        storage.delete_topic(chat_id)
-        topic_id = await _get_or_create_topic(chat_id, client, storage, bot, cfg, sender_name)
-        await _deliver(topic_id)
 
 
 async def _display_name(client: Client, user_id: Optional[int]) -> str:
@@ -347,8 +362,8 @@ async def _forward(bot, group_id, topic_id, sender_name, text, media,
 
             caption = ""  # подпись прикрепляем только к первому вложению
         except TelegramBadRequest as err:
-            if _is_topic_gone(err):
-                raise  # пусть _handle пересоздаст ветку и повторит
+            if _is_thread_gone(err) or _is_chat_gone(err):
+                raise  # обрабатывается выше в _handle
             log.exception("Не удалось переслать вложение %s", type(att).__name__)
         except Exception:
             log.exception("Не удалось переслать вложение %s", type(att).__name__)
